@@ -2,36 +2,7 @@ import type { Route } from "./+types/post.$messageId.$replyIndex";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { messages } from "../db/schema";
-import { data, isRouteErrorResponse, redirect, useActionData } from "react-router";
-
-export async function loader({ params, context }: Route.LoaderArgs) {
-  const db = drizzle(context.cloudflare.env.DB);
-  const messageId = params.messageId;
-  const replyIndex = parseInt(params.replyIndex);
-
-  if (!messageId || isNaN(replyIndex)) {
-    throw data("Invalid parameters", { status: 400 });
-  }
-
-  const [message] = await db
-    .select()
-    .from(messages)
-    .where(eq(messages.id, messageId));
-
-  if (!message) {
-    throw data("Message not found", { status: 404 });
-  }
-
-  if (replyIndex < 0 || replyIndex >= message.possibleReplies.length) {
-    throw data("Reply index out of range", { status: 400 });
-  }
-
-  return {
-    message,
-    replyIndex,
-    replyText: message.possibleReplies[replyIndex],
-  };
-}
+import { data, isRouteErrorResponse, redirect } from "react-router";
 
 export async function action({ params, context }: Route.ActionArgs) {
   const env = context.cloudflare.env;
@@ -84,7 +55,7 @@ export async function action({ params, context }: Route.ActionArgs) {
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let title = "Something went wrong";
-  let detail = "An unexpected error occurred while loading this reply.";
+  let detail = "An unexpected error occurred while sending your reply.";
 
   if (isRouteErrorResponse(error)) {
     title =
@@ -118,57 +89,6 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         <a
           href="/"
           className="inline-block rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-        >
-          Back to dashboard
-        </a>
-      </div>
-    </div>
-  );
-}
-
-export default function PostReply({ loaderData }: Route.ComponentProps) {
-  const { message, replyIndex, replyText } = loaderData;
-  const actionData = useActionData<typeof action>();
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 dark:bg-neutral-950">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-            Original question from {message.from}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
-            {message.messageContent}
-          </p>
-        </div>
-
-        <div className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-6 dark:border-blue-800 dark:bg-blue-950/30">
-          <p className="text-xs font-medium uppercase tracking-wider text-blue-500 dark:text-blue-400">
-            Reply #{replyIndex + 1}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-900 dark:text-neutral-100">
-            {replyText}
-          </p>
-        </div>
-
-        {actionData && "error" in actionData && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
-            {actionData.error}
-          </div>
-        )}
-
-        <form method="post">
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 active:bg-blue-800"
-          >
-            Send to Slack
-          </button>
-        </form>
-
-        <a
-          href="/"
-          className="block text-center text-sm text-neutral-500 transition-colors hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           Back to dashboard
         </a>
