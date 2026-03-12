@@ -1,0 +1,44 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ceo-console",
+	"compatibility_date": "2025-04-04",
+	"main": "./workers/app.ts",
+	"vars": {
+		"VALUE_FROM_CLOUDFLARE": "Hello from Cloudflare"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"routes": [
+		{
+			"pattern": "ceo-console.paramountliquor.app",
+			"custom_domain": true
+		}
+	],
+	/**
+	 * Smart Placement
+	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
+	 */
+	// "placement": {  "mode": "smart" }
+	/**
+	 * Bindings
+	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
+	 * databases, object storage, AI inference, real-time communication and more.
+	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
+	 */
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ceo-console-db",
+			"database_id": "9aae3cd9-f312-4865-8a99-32052ead8ce1",
+			"migrations_dir": "drizzle"
+		}
+	]
+}
