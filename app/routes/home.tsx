@@ -2,7 +2,7 @@ import type { Route } from "./+types/home";
 import { drizzle } from "drizzle-orm/d1";
 import { desc, eq } from "drizzle-orm";
 import { messages } from "../db/schema";
-import { useSearchParams } from "react-router";
+import { Form, useSearchParams } from "react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -179,7 +179,7 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
           {message.possibleReplies.length > 0 && folder === "inbox" && (
             <div className="mt-3 space-y-2">
               {message.possibleReplies.map((reply, i) => (
-                <form key={i} method="post" action={`/post/${message.id}/${i}`}>
+                <Form key={i} method="post" action={`/api/post/${message.id}/${i}`}>
                   <button
                     type="submit"
                     className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-left text-sm text-neutral-700 transition-all hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/40 dark:hover:text-blue-300"
@@ -192,7 +192,7 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
                     </svg>
                   </button>
-                </form>
+                </Form>
               ))}
             </div>
           )}
