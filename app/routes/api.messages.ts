@@ -8,11 +8,11 @@ export async function action({ request, context }: Route.ActionArgs) {
   }
 
   const body = (await request.json()) as Record<string, unknown>;
-  const { message_content, from, channel, possible_replies } = body;
+  const { message_id, message_content, from, channel, possible_replies } = body;
 
-  if (!message_content || !from || !channel || !Array.isArray(possible_replies)) {
+  if (!message_id || !message_content || !from || !channel || !Array.isArray(possible_replies)) {
     return Response.json(
-      { error: "Missing required fields: message_content, from, channel, possible_replies (array)" },
+      { error: "Missing required fields: message_id, message_content, from, channel, possible_replies (array)" },
       { status: 400 }
     );
   }
@@ -23,6 +23,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const [inserted] = await db
       .insert(messages)
       .values({
+        id: message_id as string,
         messageContent: message_content as string,
         from: from as string,
         channel: channel as string,
