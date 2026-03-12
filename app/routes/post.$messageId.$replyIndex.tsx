@@ -2,10 +2,11 @@ import type { Route } from "./+types/post.$messageId.$replyIndex";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { messages } from "../db/schema";
-import { data, Form, isRouteErrorResponse } from "react-router";
+import { data, redirect, isRouteErrorResponse } from "react-router";
 
 export async function loader({ params, context }: Route.LoaderArgs) {
-  const db = drizzle(context.cloudflare.env.DB);
+  const env = context.cloudflare.env;
+  const db = drizzle(env.DB);
   const messageId = params.messageId;
   const replyIndex = parseInt(params.replyIndex);
 
@@ -22,119 +23,45 @@ export async function loader({ params, context }: Route.LoaderArgs) {
     throw data("Invalid reply index", { status: 400 });
   }
 
-  return { message, replyIndex };
-}
+  if (!message.channel) {
+    throw data("This message has no Slack channel associated with it.", { status: 422 });
+  }
 
-export default function PostReply({ loaderData }: Route.ComponentProps) {
-  const { message, replyIndex } = loaderData;
-  const selectedReply = message.possibleReplies[replyIndex];
-  const time = new Date(message.createdAt).toLocaleString("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
+  if (message.sent) {
+    return redirect("/?sent=true");
+  }
+
+  const replyText = message.possibleReplies[replyIndex];
+
+  const slackRes = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      channel: message.channel,
+      text: `<@${message.from}> ${replyText}`,
+    }),
   });
 
-  return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-6 py-5">
-          <a
-            href="/"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-            </svg>
-          </a>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            Send Reply
-          </h1>
-        </div>
-      </header>
+  const result = (await slackRes.json()) as { ok: boolean; error?: string };
 
-      <main className="mx-auto max-w-2xl px-6 py-8">
-        <div className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="border-b border-neutral-100 px-6 py-4 dark:border-neutral-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                {message.from.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                  {message.from}
-                </p>
-                <time className="text-xs text-neutral-400 dark:text-neutral-500">
-                  {time}
-                </time>
-              </div>
-            </div>
-          </div>
+  if (!result.ok) {
+    throw data(`Slack error: ${result.error}`, { status: 502 });
+  }
 
-          <div className="px-6 py-5">
-            <label className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              Original Message
-            </label>
-            <p className="mt-2 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
-              {message.messageContent}
-            </p>
-          </div>
+  await db
+    .update(messages)
+    .set({ sent: true })
+    .where(eq(messages.id, messageId));
 
-          <div className="border-t border-neutral-100 px-6 py-5 dark:border-neutral-800">
-            <label className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-              Reply to send
-            </label>
-            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-relaxed text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
-              {selectedReply}
-            </div>
-
-            {message.possibleReplies.length > 1 && (
-              <div className="mt-4">
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">
-                  Other available replies:
-                </p>
-                <div className="mt-2 space-y-1.5">
-                  {message.possibleReplies.map((reply, i) =>
-                    i !== replyIndex ? (
-                      <a
-                        key={i}
-                        href={`/post/${message.id}/${i}`}
-                        className="block rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm text-neutral-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:border-blue-700 dark:hover:bg-blue-950/40 dark:hover:text-blue-300"
-                      >
-                        {reply}
-                      </a>
-                    ) : null
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-neutral-100 px-6 py-4 dark:border-neutral-800">
-            <div className="flex items-center justify-end gap-3">
-              <a
-                href="/"
-                className="rounded-lg px-4 py-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              >
-                Cancel
-              </a>
-              <Form method="post" action={`/api/post/${message.id}/${replyIndex}`}>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                >
-                  Send to Slack
-                </button>
-              </Form>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+  return redirect("/?sent=true");
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let title = "Something went wrong";
-  let detail = "An unexpected error occurred while loading this reply.";
+  let detail = "An unexpected error occurred while sending your reply.";
 
   if (isRouteErrorResponse(error)) {
     title =
@@ -142,7 +69,11 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         ? "Message not found"
         : error.status === 400
           ? "Invalid request"
-          : `Error ${error.status}`;
+          : error.status === 422
+            ? "Cannot send"
+            : error.status === 502
+              ? "Slack error"
+              : `Error ${error.status}`;
     detail =
       typeof error.data === "string"
         ? error.data
