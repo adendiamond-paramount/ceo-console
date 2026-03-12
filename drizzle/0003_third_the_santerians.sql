@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `sent` integer DEFAULT false NOT NULL;

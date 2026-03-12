@@ -8,6 +8,27 @@
       "when": 1773286943102,
       "tag": "0000_unusual_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773288830881,
+      "tag": "0001_orange_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773289458458,
+      "tag": "0002_hex-ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1773291103950,
+      "tag": "0003_third_the_santerians",
+      "breakpoints": true
     }
   ]
 }

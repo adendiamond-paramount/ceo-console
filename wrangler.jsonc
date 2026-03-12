@@ -38,7 +38,8 @@
 			"binding": "DB",
 			"database_name": "ceo-console-db",
 			"database_id": "9aae3cd9-f312-4865-8a99-32052ead8ce1",
-			"migrations_dir": "drizzle"
+			"migrations_dir": "drizzle",
+			"remote": true
 		}
 	]
 }
