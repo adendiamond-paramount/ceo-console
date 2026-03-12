@@ -33,12 +33,18 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   const db = drizzle(env.DB);
 
+  const [userName, channelName] = await Promise.all([
+    resolveUser(user, env.SLACK_BOT_TOKEN),
+    resolveChannel(channel, env.SLACK_BOT_TOKEN),
+  ]);
+
   const [inserted] = await db
     .insert(messages)
     .values({
       id: questionId,
-      messageContent: "",
-      from: "",
+      messageContent: question,
+      from: userName,
+      channel: channelName,
       possibleReplies: [],
       status: "processing",
     })
@@ -52,11 +58,6 @@ export async function action({ request, context }: Route.ActionArgs) {
       body: JSON.stringify({ type: "new_message", message: inserted }),
     }))
   );
-
-  const [userName, channelName] = await Promise.all([
-    resolveUser(user, env.SLACK_BOT_TOKEN),
-    resolveChannel(channel, env.SLACK_BOT_TOKEN),
-  ]);
 
   await fetch(env.DISCORD_WEBHOOK_URL, {
     method: "POST",

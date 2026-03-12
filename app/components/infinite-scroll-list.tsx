@@ -38,11 +38,14 @@ export function InfiniteScrollList<T>({
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !hasMore) return;
+    const root = node.closest<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) loadMoreRef.current?.();
       },
-      { rootMargin: "200px" },
+      { root, rootMargin: "200px" },
     );
     observer.observe(node);
     return () => observer.disconnect();

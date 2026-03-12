@@ -332,9 +332,15 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
 
         <div className="flex items-start gap-4 p-5">
           <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
-            <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-            </svg>
+            {message.from ? (
+              <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                {message.from.charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            )}
             <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white bg-amber-400 dark:border-neutral-900 dark:bg-amber-500">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
             </span>
@@ -343,6 +349,11 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
+                {message.from && (
+                  <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {message.from}
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
                   <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -362,11 +373,17 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
               </div>
             </div>
 
-            <div className="mt-3 space-y-2.5">
-              <div className="h-3 w-2/5 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
-              <div className="h-3 w-full animate-pulse rounded bg-neutral-100 dark:bg-neutral-800" />
-              <div className="h-3 w-4/5 animate-pulse rounded bg-neutral-100 dark:bg-neutral-800" />
-            </div>
+            {message.messageContent ? (
+              <p className="mt-2 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+                {message.messageContent}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2.5">
+                <div className="h-3 w-2/5 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
+                <div className="h-3 w-full animate-pulse rounded bg-neutral-100 dark:bg-neutral-800" />
+                <div className="h-3 w-4/5 animate-pulse rounded bg-neutral-100 dark:bg-neutral-800" />
+              </div>
+            )}
 
             <div className="mt-4 space-y-2">
               {[1, 2, 3].map((n) => (

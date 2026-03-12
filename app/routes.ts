@@ -8,4 +8,6 @@ export default [
   route("post/:messageId/:replyIndex", "routes/post.$messageId.$replyIndex.tsx"),
   route("api/post/:messageId/:replyIndex", "routes/api.post.$messageId.$replyIndex.ts"),
   route("api/delete/:messageId", "routes/api.delete.$messageId.ts"),
+  route("api/inbox", "routes/api.inbox.ts"),
+  route("api/sent", "routes/api.sent.ts"),
 ] satisfies RouteConfig;
