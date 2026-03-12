@@ -17,7 +17,8 @@ export async function action({ request, context }: Route.ActionArgs) {
     );
   }
 
-  const db = drizzle(context.cloudflare.env.DB);
+  const env = context.cloudflare.env;
+  const db = drizzle(env.DB);
 
   try {
     const [inserted] = await db
@@ -30,6 +31,15 @@ export async function action({ request, context }: Route.ActionArgs) {
         possibleReplies: possible_replies as string[],
       })
       .returning();
+
+    const id = env.MESSAGE_RELAY.idFromName("global");
+    const stub = env.MESSAGE_RELAY.get(id);
+    context.cloudflare.ctx.waitUntil(
+      stub.fetch(new Request("http://do/broadcast", {
+        method: "POST",
+        body: JSON.stringify({ type: "new_message", message: inserted }),
+      }))
+    );
 
     return Response.json({ success: true, message: inserted });
   } catch (err) {

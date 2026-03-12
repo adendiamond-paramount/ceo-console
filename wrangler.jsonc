@@ -33,6 +33,20 @@
 	 * databases, object storage, AI inference, real-time communication and more.
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
 	 */
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MESSAGE_RELAY",
+				"class_name": "MessageRelay"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["MessageRelay"]
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",

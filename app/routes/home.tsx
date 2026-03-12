@@ -1,11 +1,19 @@
 import type { Route } from "./+types/home";
 import { drizzle } from "drizzle-orm/d1";
-import { desc, eq } from "drizzle-orm";
+import { count as dbCount, desc, eq } from "drizzle-orm";
 import { messages } from "../db/schema";
 import { Form, useSearchParams } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+type Message = typeof messages.$inferSelect;
+
+type WsEvent =
+  | { type: "new_message"; message: Message }
+  | { type: "message_sent"; id: string }
+  | { type: "message_deleted"; id: string; wasSent: boolean };
+
+const SENT_PAGE_SIZE = 10;
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -14,22 +22,100 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const db = drizzle(context.cloudflare.env.DB);
+  const url = new URL(request.url);
 
-  const [inbox, sent] = await Promise.all([
+  const sentPage = Math.max(1, parseInt(url.searchParams.get("sentPage") || "1", 10) || 1);
+  const sentOffset = (sentPage - 1) * SENT_PAGE_SIZE;
+
+  const [inbox, sent, sentCountResult] = await Promise.all([
     db.select().from(messages).where(eq(messages.sent, false)).orderBy(desc(messages.createdAt)),
-    db.select().from(messages).where(eq(messages.sent, true)).orderBy(desc(messages.createdAt)),
+    db
+      .select()
+      .from(messages)
+      .where(eq(messages.sent, true))
+      .orderBy(desc(messages.createdAt))
+      .limit(SENT_PAGE_SIZE)
+      .offset(sentOffset),
+    db.select({ value: dbCount() }).from(messages).where(eq(messages.sent, true)),
   ]);
 
-  return { inbox, sent };
+  const sentTotal = sentCountResult[0]?.value ?? 0;
+
+  return { inbox, sent, sentPage, sentTotal };
 }
 
 type Folder = "inbox" | "sent";
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { inbox, sent } = loaderData;
+  const {
+    inbox: loaderInbox,
+    sent: loaderSent,
+    sentPage,
+    sentTotal: loaderSentTotal,
+  } = loaderData;
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const [inbox, setInbox] = useState(loaderInbox);
+  const [sent, setSent] = useState(loaderSent);
+  const [sentTotal, setSentTotal] = useState(loaderSentTotal);
+
+  useEffect(() => { setInbox(loaderInbox); }, [loaderInbox]);
+  useEffect(() => { setSent(loaderSent); }, [loaderSent]);
+  useEffect(() => { setSentTotal(loaderSentTotal); }, [loaderSentTotal]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let alive = true;
+
+    function connect() {
+      if (!alive) return;
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+      ws.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data) as WsEvent;
+          switch (event.type) {
+            case "new_message":
+              setInbox((prev) => [event.message, ...prev]);
+              toast.info(`New message from ${event.message.from}`);
+              break;
+            case "message_sent":
+              setInbox((prev) => prev.filter((m) => m.id !== event.id));
+              setSentTotal((prev) => prev + 1);
+              break;
+            case "message_deleted":
+              if (event.wasSent) {
+                setSent((prev) => prev.filter((m) => m.id !== event.id));
+                setSentTotal((prev) => Math.max(0, prev - 1));
+              } else {
+                setInbox((prev) => prev.filter((m) => m.id !== event.id));
+              }
+              break;
+          }
+        } catch { /* ignore malformed messages */ }
+      };
+
+      ws.onclose = () => {
+        if (alive) reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => ws?.close();
+    }
+
+    connect();
+
+    return () => {
+      alive = false;
+      clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, []);
 
   const folder: Folder = searchParams.get("folder") === "sent" ? "sent" : "inbox";
   const setFolder = (f: Folder) => {
@@ -37,6 +123,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     if (f === "inbox") next.delete("folder");
     else next.set("folder", f);
     next.delete("sent");
+    next.delete("sentPage");
+    setSearchParams(next, { replace: true });
+  };
+
+  const sentTotalPages = Math.max(1, Math.ceil(sentTotal / SENT_PAGE_SIZE));
+
+  const goToSentPage = (page: number) => {
+    const next = new URLSearchParams(searchParams);
+    if (page <= 1) next.delete("sentPage");
+    else next.set("sentPage", String(page));
     setSearchParams(next, { replace: true });
   };
 
@@ -70,7 +166,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             active={folder === "sent"}
             onClick={() => setFolder("sent")}
             label="Sent"
-            count={sent.length}
+            count={sentTotal}
           />
         </nav>
       </header>
@@ -84,6 +180,14 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               <MessageCard key={msg.id} message={msg} folder={folder} />
             ))}
           </div>
+        )}
+
+        {folder === "sent" && sentTotalPages > 1 && (
+          <Pagination
+            currentPage={sentPage}
+            totalPages={sentTotalPages}
+            onPageChange={goToSentPage}
+          />
         )}
       </main>
     </div>
@@ -169,6 +273,20 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
               <time className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">
                 {time}
               </time>
+              <Form method="post" action={`/api/delete/${message.id}`}>
+                <button
+                  type="submit"
+                  onClick={(e) => {
+                    if (!confirm("Delete this message?")) e.preventDefault();
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-neutral-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                  title="Delete message"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                  </svg>
+                </button>
+              </Form>
             </div>
           </div>
 
@@ -176,7 +294,7 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
             {message.messageContent}
           </p>
 
-          {message.possibleReplies.length > 0 && folder === "inbox" && (
+          {folder === "inbox" && (
             <div className="mt-3 space-y-2">
               {message.possibleReplies.map((reply, i) => (
                 <Form key={i} method="post" action={`/api/post/${message.id}/${i}`}>
@@ -194,16 +312,103 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
                   </button>
                 </Form>
               ))}
+              <a
+                href={`/post/${message.id}/custom`}
+                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-transparent px-4 py-3 text-left text-sm transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-neutral-600 dark:hover:border-blue-700 dark:hover:bg-blue-950/40"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-200 dark:bg-neutral-700">
+                  <svg className="h-3 w-3 text-neutral-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
+                  </svg>
+                </span>
+                <span className="flex-1 italic text-neutral-400 dark:text-neutral-500">Write your own reply…</span>
+              </a>
             </div>
           )}
 
-          {message.possibleReplies.length > 0 && folder === "sent" && (
-            <div className="mt-3 rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-600 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
-              {message.possibleReplies[0]}
-            </div>
-          )}
         </div>
       </div>
+
+      {message.possibleReplies.length > 0 && folder === "sent" && (
+        <div className="flex items-start gap-4 border-t border-neutral-100 px-5 py-4 dark:border-neutral-800">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
+            You
+          </div>
+          <div className="min-w-0 flex-1 rounded-lg border border-neutral-100 bg-neutral-50 px-4 py-3 text-sm leading-relaxed text-neutral-600 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400">
+            {message.possibleReplies[0]}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  const pages: (number | "...")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("...");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+  }
+
+  const btnBase =
+    "inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors";
+
+  return (
+    <div className="mt-8 flex items-center justify-center gap-1.5">
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage <= 1}
+        className={`${btnBase} border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700`}
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        </svg>
+      </button>
+
+      {pages.map((p, i) =>
+        p === "..." ? (
+          <span key={`ellipsis-${i}`} className="px-1 text-sm text-neutral-400 dark:text-neutral-500">
+            &hellip;
+          </span>
+        ) : (
+          <button
+            key={p}
+            onClick={() => onPageChange(p)}
+            className={`${btnBase} ${
+              p === currentPage
+                ? "bg-blue-600 text-white shadow-sm dark:bg-blue-500"
+                : "border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+            }`}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage >= totalPages}
+        className={`${btnBase} border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 disabled:pointer-events-none disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700`}
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+        </svg>
+      </button>
     </div>
   );
 }
