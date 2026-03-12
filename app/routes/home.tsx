@@ -1,7 +1,6 @@
 import type { Route } from "./+types/home";
-import { drizzle } from "drizzle-orm/d1";
-import { count as dbCount, desc, eq } from "drizzle-orm";
 import { messages } from "../db/schema";
+import { getDb, fetchMessages, countMessages } from "../db/queries";
 import { Form, useSearchParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -15,8 +14,6 @@ type WsEvent =
   | { type: "message_sent"; id: string }
   | { type: "message_deleted"; id: string; wasSent: boolean };
 
-const PAGE_SIZE = 10;
-
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "CEO Console" },
@@ -25,19 +22,23 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const db = drizzle(context.cloudflare.env.DB);
+  const db = getDb(context.cloudflare.env.DB);
 
-  const [inbox, sent, inboxCountResult, sentCountResult] = await Promise.all([
-    db.select().from(messages).where(eq(messages.sent, false)).orderBy(desc(messages.createdAt)).limit(PAGE_SIZE),
-    db.select().from(messages).where(eq(messages.sent, true)).orderBy(desc(messages.createdAt)).limit(PAGE_SIZE),
-    db.select({ value: dbCount() }).from(messages).where(eq(messages.sent, false)),
-    db.select({ value: dbCount() }).from(messages).where(eq(messages.sent, true)),
+  const [inbox, sent, inboxTotal, sentTotal] = await Promise.all([
+    fetchMessages(db, false),
+    fetchMessages(db, true),
+    countMessages(db, false),
+    countMessages(db, true),
   ]);
 
-  const inboxTotal = inboxCountResult[0]?.value ?? 0;
-  const sentTotal = sentCountResult[0]?.value ?? 0;
-
-  return { inbox, sent, inboxTotal, sentTotal };
+  return {
+    inbox: inbox.messages,
+    sent: sent.messages,
+    inboxHasMore: inbox.hasMore,
+    sentHasMore: sent.hasMore,
+    inboxTotal,
+    sentTotal,
+  };
 }
 
 type Folder = "inbox" | "sent";
@@ -46,6 +47,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const {
     inbox: loaderInbox,
     sent: loaderSent,
+    inboxHasMore: loaderInboxHasMore,
+    sentHasMore: loaderSentHasMore,
     inboxTotal: loaderInboxTotal,
     sentTotal: loaderSentTotal,
   } = loaderData;
@@ -55,17 +58,17 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const [sent, setSent] = useState(loaderSent);
   const [inboxTotal, setInboxTotal] = useState(loaderInboxTotal);
   const [sentTotal, setSentTotal] = useState(loaderSentTotal);
-  const [inboxHasMore, setInboxHasMore] = useState(loaderInbox.length === PAGE_SIZE);
-  const [sentHasMore, setSentHasMore] = useState(loaderSent.length === PAGE_SIZE);
+  const [inboxHasMore, setInboxHasMore] = useState(loaderInboxHasMore);
+  const [sentHasMore, setSentHasMore] = useState(loaderSentHasMore);
 
   useEffect(() => {
     setInbox(loaderInbox);
-    setInboxHasMore(loaderInbox.length === PAGE_SIZE);
-  }, [loaderInbox]);
+    setInboxHasMore(loaderInboxHasMore);
+  }, [loaderInbox, loaderInboxHasMore]);
   useEffect(() => {
     setSent(loaderSent);
-    setSentHasMore(loaderSent.length === PAGE_SIZE);
-  }, [loaderSent]);
+    setSentHasMore(loaderSentHasMore);
+  }, [loaderSent, loaderSentHasMore]);
   useEffect(() => { setInboxTotal(loaderInboxTotal); }, [loaderInboxTotal]);
   useEffect(() => { setSentTotal(loaderSentTotal); }, [loaderSentTotal]);
 
