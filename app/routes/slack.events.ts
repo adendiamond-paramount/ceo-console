@@ -1,4 +1,6 @@
 import type { Route } from "./+types/slack.events";
+import { drizzle } from "drizzle-orm/d1";
+import { messages } from "../db/schema";
 
 export async function action({ request, context }: Route.ActionArgs) {
   const env = context.cloudflare.env;
@@ -28,6 +30,28 @@ export async function action({ request, context }: Route.ActionArgs) {
   };
   const question = text.replace(/<@[A-Z0-9]+>/g, "").trim();
   const questionId = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+
+  const db = drizzle(env.DB);
+
+  const [inserted] = await db
+    .insert(messages)
+    .values({
+      id: questionId,
+      messageContent: "",
+      from: "",
+      possibleReplies: [],
+      status: "processing",
+    })
+    .returning();
+
+  const relayId = env.MESSAGE_RELAY.idFromName("global");
+  const relay = env.MESSAGE_RELAY.get(relayId);
+  context.cloudflare.ctx.waitUntil(
+    relay.fetch(new Request("http://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type: "new_message", message: inserted }),
+    }))
+  );
 
   const [userName, channelName] = await Promise.all([
     resolveUser(user, env.SLACK_BOT_TOKEN),

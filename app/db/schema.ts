@@ -17,6 +17,7 @@ export const messages = sqliteTable("messages", {
     .notNull()
     .$type<string[]>(),
   sent: integer("sent", { mode: "boolean" }).notNull().default(false),
+  status: text("status").notNull().default("processing"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

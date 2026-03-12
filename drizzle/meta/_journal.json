@@ -29,6 +29,13 @@
       "when": 1773291103950,
       "tag": "0003_third_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1773299883434,
+      "tag": "0004_handy_loners",
+      "breakpoints": true
     }
   ]
 }

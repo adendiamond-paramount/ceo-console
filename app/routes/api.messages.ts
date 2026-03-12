@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.messages";
 import { drizzle } from "drizzle-orm/d1";
+import { eq } from "drizzle-orm";
 import { messages } from "../db/schema";
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -21,27 +22,32 @@ export async function action({ request, context }: Route.ActionArgs) {
   const db = drizzle(env.DB);
 
   try {
-    const [inserted] = await db
-      .insert(messages)
-      .values({
-        id: question_id as string,
+    const [updated] = await db
+      .update(messages)
+      .set({
         messageContent: message_content as string,
         from: from as string,
         channel: channel as string,
         possibleReplies: possible_replies as string[],
+        status: "ready",
       })
+      .where(eq(messages.id, question_id as string))
       .returning();
+
+    if (!updated) {
+      return Response.json({ error: "Message not found" }, { status: 404 });
+    }
 
     const id = env.MESSAGE_RELAY.idFromName("global");
     const stub = env.MESSAGE_RELAY.get(id);
     context.cloudflare.ctx.waitUntil(
       stub.fetch(new Request("http://do/broadcast", {
         method: "POST",
-        body: JSON.stringify({ type: "new_message", message: inserted }),
+        body: JSON.stringify({ type: "message_updated", message: updated }),
       }))
     );
 
-    return Response.json({ success: true, message: inserted });
+    return Response.json({ success: true, message: updated });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown database error";
     return Response.json({ error: message }, { status: 500 });

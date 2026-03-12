@@ -5,11 +5,13 @@ import { messages } from "../db/schema";
 import { Form, useSearchParams } from "react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ScrollArea } from "~/components/ui/scroll-area";
 
 type Message = typeof messages.$inferSelect;
 
 type WsEvent =
   | { type: "new_message"; message: Message }
+  | { type: "message_updated"; message: Message }
   | { type: "message_sent"; id: string }
   | { type: "message_deleted"; id: string; wasSent: boolean };
 
@@ -83,7 +85,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           switch (event.type) {
             case "new_message":
               setInbox((prev) => [event.message, ...prev]);
-              toast.info(`New message from ${event.message.from}`);
+              toast.info("New message processing…");
+              break;
+            case "message_updated":
+              setInbox((prev) =>
+                prev.map((m) => m.id === event.message.id ? event.message : m)
+              );
+              toast.info(`Message ready from ${event.message.from}`);
               break;
             case "message_sent":
               setInbox((prev) => prev.filter((m) => m.id !== event.id));
@@ -174,6 +182,14 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <main className="mx-auto max-w-5xl px-6 py-8">
         {current.length === 0 ? (
           <EmptyState folder={folder} />
+        ) : folder === "sent" ? (
+          <ScrollArea className="h-[calc(100vh-13rem)]">
+            <div className="space-y-4 pr-4">
+              {current.map((msg) => (
+                <MessageCard key={msg.id} message={msg} folder={folder} />
+              ))}
+            </div>
+          </ScrollArea>
         ) : (
           <div className="space-y-4">
             {current.map((msg) => (
@@ -251,6 +267,50 @@ function MessageCard({ message, folder }: { message: typeof messages.$inferSelec
     dateStyle: "medium",
     timeStyle: "short",
   });
+
+  if (message.status === "processing") {
+    return (
+      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="flex items-start gap-4 p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
+            <svg className="h-5 w-5 animate-spin text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                Processing…
+              </span>
+              <div className="flex items-center gap-2">
+                <time className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">
+                  {time}
+                </time>
+                <Form method="post" action={`/api/delete/${message.id}`}>
+                  <button
+                    type="submit"
+                    onClick={(e) => {
+                      if (!confirm("Delete this message?")) e.preventDefault();
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-neutral-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                    title="Delete message"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                    </svg>
+                  </button>
+                </Form>
+              </div>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-400 dark:text-neutral-500 italic">
+              Generating reply options…
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900">
