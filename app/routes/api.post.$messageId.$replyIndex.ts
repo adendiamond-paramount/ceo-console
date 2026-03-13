@@ -28,8 +28,15 @@ export async function action({ request, params, context }: Route.ActionArgs) {
     return data({ error: "This message has no Slack channel associated with it." }, { status: 422 });
   }
 
-  const formData = await request.formData();
-  const customText = formData.get("text");
+  let customText: string | null = null;
+  const contentType = request.headers.get("Content-Type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = (await request.json()) as { text?: string };
+    customText = body.text ?? null;
+  } else {
+    const formData = await request.formData();
+    customText = formData.get("text") as string | null;
+  }
   const replyText = typeof customText === "string" && customText.trim()
     ? customText.trim()
     : isCustom
